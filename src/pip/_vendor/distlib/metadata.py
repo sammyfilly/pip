@@ -177,7 +177,7 @@ def _best_version(fields):
     # possible_version contains qualified versions
     if len(possible_versions) == 1:
         return possible_versions[0]   # found !
-    elif len(possible_versions) == 0:
+    elif not possible_versions:
         logger.debug('Out of options - unknown metadata set: %s', fields)
         raise MetadataConflictError('Unknown metadata set')
 
@@ -204,12 +204,7 @@ def _best_version(fields):
         return '1.1'
     if is_1_2:
         return '1.2'
-    if is_2_1:
-        return '2.1'
-    # if is_2_2:
-        # return '2.2'
-
-    return '2.2'
+    return '2.1' if is_2_1 else '2.2'
 
 # This follows the rules about transforming keys as described in
 # https://www.python.org/dev/peps/pep-0566/#id17
@@ -247,7 +242,7 @@ def _get_name_and_version(name, version, for_filename=False):
         # spaces in the version string become '.'
         name = _FILESAFE.sub('-', name)
         version = _FILESAFE.sub('-', version.replace(' ', '.'))
-    return '%s-%s' % (name, version)
+    return f'{name}-{version}'
 
 
 class LegacyMetadata(object):
@@ -308,9 +303,7 @@ class LegacyMetadata(object):
         return _ATTR2FIELD.get(name, name)
 
     def _default_value(self, name):
-        if name in _LISTFIELDS or name in _ELEMENTSFIELD:
-            return []
-        return 'UNKNOWN'
+        return [] if name in _LISTFIELDS or name in _ELEMENTSFIELD else 'UNKNOWN'
 
     def _remove_line_prefix(self, value):
         if self.metadata_version in ('1.0', '1.1'):
@@ -453,11 +446,7 @@ class LegacyMetadata(object):
                 value = []
         elif (name in _LISTFIELDS and
               not isinstance(value, (list, tuple))):
-            if isinstance(value, string_types):
-                value = [value]
-            else:
-                value = []
-
+            value = [value] if isinstance(value, string_types) else []
         if logger.isEnabledFor(logging.WARNING):
             project_name = self['Name']
 
@@ -493,8 +482,7 @@ class LegacyMetadata(object):
                 default = self._default_value(name)
             return default
         if name in _UNICODEFIELDS:
-            value = self._fields[name]
-            return value
+            return self._fields[name]
         elif name in _LISTFIELDS:
             value = self._fields[name]
             if value is None:
@@ -527,7 +515,7 @@ class LegacyMetadata(object):
                 missing.append(attr)
 
         if strict and missing != []:
-            msg = 'missing required metadata: %s' % ', '.join(missing)
+            msg = f"missing required metadata: {', '.join(missing)}"
             raise MetadataMissingError(msg)
 
         for attr in ('Home-page', 'Author'):
@@ -554,7 +542,7 @@ class LegacyMetadata(object):
             for field in fields:
                 value = self.get(field, None)
                 if value is not None and not controller(value):
-                    warnings.append("Wrong value for '%s': %s" % (field, value))
+                    warnings.append(f"Wrong value for '{field}': {value}")
 
         return missing, warnings
 
@@ -596,8 +584,7 @@ class LegacyMetadata(object):
         return list(_version2fieldlist(self['Metadata-Version']))
 
     def __iter__(self):
-        for key in self.keys():
-            yield key
+        yield from self.keys()
 
     def values(self):
         return [self[key] for key in self.keys()]
@@ -606,8 +593,7 @@ class LegacyMetadata(object):
         return [(key, self[key]) for key in self.keys()]
 
     def __repr__(self):
-        return '<%s %s %s>' % (self.__class__.__name__, self.name,
-                               self.version)
+        return f'<{self.__class__.__name__} {self.name} {self.version}>'
 
 
 METADATA_FILENAME = 'pydist.json'
@@ -747,13 +733,11 @@ class Metadata(object):
                     # special cases for PEP 459
                     sentinel = object()
                     result = sentinel
-                    d = self._data.get('extensions')
-                    if d:
+                    if d := self._data.get('extensions'):
                         if key == 'commands':
                             result = d.get('python.commands', value)
                         elif key == 'classifiers':
-                            d = d.get('python.details')
-                            if d:
+                            if d := d.get('python.details'):
                                 result = d.get(key, value)
                         else:
                             d = d.get('python.exports')
@@ -811,10 +795,7 @@ class Metadata(object):
             if key == 'keywords':
                 if isinstance(value, string_types):
                     value = value.strip()
-                    if value:
-                        value = value.split()
-                    else:
-                        value = []
+                    value = value.split() if value else []
             if self._legacy:
                 self._legacy[key] = value
             else:
@@ -830,7 +811,7 @@ class Metadata(object):
             result = self._legacy['Provides-Dist']
         else:
             result = self._data.setdefault('provides', [])
-        s = '%s (%s)' % (self.name, self.version)
+        s = f'{self.name} ({self.version})'
         if s not in result:
             result.append(s)
         return result
@@ -861,34 +842,26 @@ class Metadata(object):
                     # unconditional
                     include = True
                 else:
-                    if 'extra' not in d:
-                        # Not extra-dependent - only environment-dependent
-                        include = True
-                    else:
-                        include = d.get('extra') in extras
+                    include = True if 'extra' not in d else d.get('extra') in extras
                     if include:
-                        # Not excluded because of extras, check environment
-                        marker = d.get('environment')
-                        if marker:
+                        if marker := d.get('environment'):
                             include = interpret(marker, env)
                 if include:
                     result.extend(d['requires'])
             for key in ('build', 'dev', 'test'):
-                e = ':%s:' % key
+                e = f':{key}:'
                 if e in extras:
                     extras.remove(e)
                     # A recursive call, but it should terminate since 'test'
                     # has been removed from the extras
-                    reqts = self._data.get('%s_requires' % key, [])
+                    reqts = self._data.get(f'{key}_requires', [])
                     result.extend(self.get_requirements(reqts, extras=extras,
                                                         env=env))
         return result
 
     @property
     def dictionary(self):
-        if self._legacy:
-            return self._from_legacy()
-        return self._data
+        return self._from_legacy() if self._legacy else self._data
 
     @property
     def dependencies(self):
@@ -913,7 +886,7 @@ class Metadata(object):
                 if scheme not in exclusions:
                     missing.append(key)
         if missing:
-            msg = 'Missing metadata items: %s' % ', '.join(missing)
+            msg = f"Missing metadata items: {', '.join(missing)}"
             raise MetadataMissingError(msg)
         for k, v in mapping.items():
             self._validate_value(k, v, scheme)
@@ -931,8 +904,7 @@ class Metadata(object):
         if self._legacy:
             return self._legacy.todict(True)
         else:
-            result = extract_by_key(self._data, self.INDEX_KEYS)
-            return result
+            return extract_by_key(self._data, self.INDEX_KEYS)
 
     def _from_legacy(self):
         assert self._legacy and not self._data
@@ -944,10 +916,7 @@ class Metadata(object):
         for k in ('name', 'version', 'license', 'summary', 'description',
                   'classifier'):
             if k in lmd:
-                if k == 'classifier':
-                    nk = 'classifiers'
-                else:
-                    nk = k
+                nk = 'classifiers' if k == 'classifier' else k
                 result[nk] = lmd[k]
         kw = lmd.get('Keywords', [])
         if kw == ['']:
@@ -989,12 +958,9 @@ class Metadata(object):
                     else:
                         marker = ''
                         if extra:
-                            marker = 'extra == "%s"' % extra
+                            marker = f'extra == "{extra}"'
                         if env:
-                            if marker:
-                                marker = '(%s) and %s' % (env, marker)
-                            else:
-                                marker = env
+                            marker = f'({env}) and {marker}' if marker else env
                         reqts.add(';'.join((r, marker)))
             return reqts
 
@@ -1031,19 +997,13 @@ class Metadata(object):
             raise ValueError('Exactly one of path and fileobj is needed')
         self.validate()
         if legacy:
-            if self._legacy:
-                legacy_md = self._legacy
-            else:
-                legacy_md = self._to_legacy()
+            legacy_md = self._legacy if self._legacy else self._to_legacy()
             if path:
                 legacy_md.write(path, skip_unknown=skip_unknown)
             else:
                 legacy_md.write_file(fileobj, skip_unknown=skip_unknown)
         else:
-            if self._legacy:
-                d = self._from_legacy()
-            else:
-                d = self._data
+            d = self._from_legacy() if self._legacy else self._data
             if fileobj:
                 json.dump(d, fileobj, ensure_ascii=True, indent=2,
                           sort_keys=True)
@@ -1057,11 +1017,14 @@ class Metadata(object):
             self._legacy.add_requirements(requirements)
         else:
             run_requires = self._data.setdefault('run_requires', [])
-            always = None
-            for entry in run_requires:
-                if 'environment' not in entry and 'extra' not in entry:
-                    always = entry
-                    break
+            always = next(
+                (
+                    entry
+                    for entry in run_requires
+                    if 'environment' not in entry and 'extra' not in entry
+                ),
+                None,
+            )
             if always is None:
                 always = { 'requires': requirements }
                 run_requires.insert(0, always)
@@ -1072,5 +1035,4 @@ class Metadata(object):
     def __repr__(self):
         name = self.name or '(no name)'
         version = self.version or 'no version'
-        return '<%s %s %s (%s)>' % (self.__class__.__name__,
-                                    self.metadata_version, name, version)
+        return f'<{self.__class__.__name__} {self.metadata_version} {name} ({version})>'

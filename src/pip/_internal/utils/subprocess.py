@@ -134,7 +134,7 @@ def call_subprocess(
     log_subprocess("Running command %s", command_desc)
     env = os.environ.copy()
     if extra_environ:
-        env.update(extra_environ)
+        env |= extra_environ
     for name in unset_environ:
         env.pop(name, None)
     try:
@@ -229,9 +229,7 @@ def call_subprocess(
                 proc.returncode,
                 cwd,
             )
-        elif on_returncode == "ignore":
-            pass
-        else:
+        elif on_returncode != "ignore":
             raise ValueError(f"Invalid value: on_returncode={on_returncode!r}")
     return output
 

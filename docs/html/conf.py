@@ -1,5 +1,6 @@
 """Sphinx configuration file for pip's documentation."""
 
+
 import glob
 import os
 import pathlib
@@ -38,8 +39,7 @@ copyright = "The pip developers"
 file_with_version = os.path.join(docs_dir, "..", "src", "pip", "__init__.py")
 with open(file_with_version) as f:
     for line in f:
-        m = re.match(r'__version__ = "(.*)"', line)
-        if m:
+        if m := re.match(r'__version__ = "(.*)"', line):
             __version__ = m.group(1)
             # The short X.Y version.
             version = ".".join(__version__.split(".")[:2])
