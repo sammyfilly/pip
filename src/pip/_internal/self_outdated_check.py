@@ -35,8 +35,7 @@ logger = logging.getLogger(__name__)
 
 def _get_statefile_name(key: str) -> str:
     key_bytes = key.encode()
-    name = hashlib.sha224(key_bytes).hexdigest()
-    return name
+    return hashlib.sha224(key_bytes).hexdigest()
 
 
 class SelfCheckState:
@@ -75,10 +74,7 @@ class SelfCheckState:
         # Determine if we need to refresh the state
         last_check = datetime.datetime.fromisoformat(self._state["last_check"])
         time_since_last_check = current_time - last_check
-        if time_since_last_check > _WEEK:
-            return None
-
-        return self._state["pypi_version"]
+        return None if time_since_last_check > _WEEK else self._state["pypi_version"]
 
     def set(self, pypi_version: str, current_time: datetime.datetime) -> None:
         # If we do not have a path to cache in, don't bother saving.
@@ -147,7 +143,7 @@ def was_installed_by_pip(pkg: str) -> bool:
     installed by system package manager, such as dnf on Fedora.
     """
     dist = get_default_environment().get_distribution(pkg)
-    return dist is not None and "pip" == dist.installer
+    return dist is not None and dist.installer == "pip"
 
 
 def _get_current_remote_pip_version(
@@ -172,10 +168,7 @@ def _get_current_remote_pip_version(
         selection_prefs=selection_prefs,
     )
     best_candidate = finder.find_best_candidate("pip").best_candidate
-    if best_candidate is None:
-        return None
-
-    return str(best_candidate.version)
+    return None if best_candidate is None else str(best_candidate.version)
 
 
 def _self_version_check_logic(

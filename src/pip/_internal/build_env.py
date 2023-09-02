@@ -141,19 +141,16 @@ class BuildEnvironment:
         }
 
         path = self._bin_dirs[:]
-        old_path = self._save_env["PATH"]
-        if old_path:
+        if old_path := self._save_env["PATH"]:
             path.extend(old_path.split(os.pathsep))
 
         pythonpath = [self._site_dir]
 
-        os.environ.update(
-            {
-                "PATH": os.pathsep.join(path),
-                "PYTHONNOUSERSITE": "1",
-                "PYTHONPATH": os.pathsep.join(pythonpath),
-            }
-        )
+        os.environ |= {
+            "PATH": os.pathsep.join(path),
+            "PYTHONNOUSERSITE": "1",
+            "PYTHONPATH": os.pathsep.join(pythonpath),
+        }
 
     def __exit__(
         self,
@@ -252,8 +249,7 @@ class BuildEnvironment:
                 )
             )
 
-        index_urls = finder.index_urls
-        if index_urls:
+        if index_urls := finder.index_urls:
             args.extend(["-i", index_urls[0]])
             for extra_index in index_urls[1:]:
                 args.extend(["--extra-index-url", extra_index])

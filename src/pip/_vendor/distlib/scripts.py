@@ -59,10 +59,9 @@ def enquote_executable(executable):
         if executable.startswith('/usr/bin/env '):
             env, _executable = executable.split(' ', 1)
             if ' ' in _executable and not _executable.startswith('"'):
-                executable = '%s "%s"' % (env, _executable)
-        else:
-            if not executable.startswith('"'):
-                executable = '"%s"' % executable
+                executable = f'{env} "{_executable}"'
+        elif not executable.startswith('"'):
+            executable = f'"{executable}"'
     return executable
 
 # Keep the old name around (for now), as there is at least one project using it!
@@ -87,7 +86,7 @@ class ScriptMaker(object):
         # It only makes sense to set mode bits on POSIX.
         self.set_mode = (os.name == 'posix') or (os.name == 'java' and
                                                  os._name == 'posix')
-        self.variants = set(('', 'X.Y'))
+        self.variants = {'', 'X.Y'}
         self._fileop = fileop or FileOperator(dry_run)
 
         self._is_nt = os.name == 'nt' or (
@@ -124,7 +123,7 @@ class ScriptMaker(object):
             elif executable.lower().endswith('jython.exe'):
                 # Use wrapper exe for Jython on Windows
                 return executable
-            return '/usr/bin/env %s' % executable
+            return f'/usr/bin/env {executable}'
 
     def _build_shebang(self, executable, post_interp):
         """
@@ -142,10 +141,7 @@ class ScriptMaker(object):
         else:
             # Add 3 for '#!' prefix and newline suffix.
             shebang_length = len(executable) + len(post_interp) + 3
-            if sys.platform == 'darwin':
-                max_shebang_length = 512
-            else:
-                max_shebang_length = 127
+            max_shebang_length = 512 if sys.platform == 'darwin' else 127
             simple_shebang = ((b' ' not in executable) and
                               (shebang_length <= max_shebang_length))
 
@@ -165,18 +161,22 @@ class ScriptMaker(object):
         elif not sysconfig.is_python_build():
             executable = get_executable()
         elif in_venv():  # pragma: no cover
-            executable = os.path.join(sysconfig.get_path('scripts'),
-                            'python%s' % sysconfig.get_config_var('EXE'))
+            executable = os.path.join(
+                sysconfig.get_path('scripts'),
+                f"python{sysconfig.get_config_var('EXE')}",
+            )
         else:  # pragma: no cover
             executable = os.path.join(
                 sysconfig.get_config_var('BINDIR'),
-               'python%s%s' % (sysconfig.get_config_var('VERSION'),
-                               sysconfig.get_config_var('EXE')))
+                f"python{sysconfig.get_config_var('VERSION')}{sysconfig.get_config_var('EXE')}",
+            )
             if not os.path.isfile(executable):
                 # for Python builds from source on Windows, no Python executables with
                 # a version suffix are created, so we use python.exe
-                executable = os.path.join(sysconfig.get_config_var('BINDIR'),
-                                'python%s' % (sysconfig.get_config_var('EXE')))
+                executable = os.path.join(
+                    sysconfig.get_config_var('BINDIR'),
+                    f"python{sysconfig.get_config_var('EXE')}",
+                )
         if options:
             executable = self._get_alternate_executable(executable, options)
 
@@ -245,14 +245,10 @@ class ScriptMaker(object):
         if not use_launcher:
             script_bytes = shebang + script_bytes
         else:  # pragma: no cover
-            if ext == 'py':
-                launcher = self._get_launcher('t')
-            else:
-                launcher = self._get_launcher('w')
+            launcher = self._get_launcher('t') if ext == 'py' else self._get_launcher('w')
             stream = BytesIO()
             with ZipFile(stream, 'w') as zf:
-                source_date_epoch = os.environ.get('SOURCE_DATE_EPOCH')
-                if source_date_epoch:
+                if source_date_epoch := os.environ.get('SOURCE_DATE_EPOCH'):
                     date_time = time.gmtime(int(source_date_epoch))[:6]
                     zinfo = ZipInfo(filename='__main__.py', date_time=date_time)
                     zf.writestr(zinfo, script_bytes)
@@ -266,14 +262,14 @@ class ScriptMaker(object):
                 n, e = os.path.splitext(outname)
                 if e.startswith('.py'):
                     outname = n
-                outname = '%s.exe' % outname
+                outname = f'{outname}.exe'
                 try:
                     self._fileop.write_binary_file(outname, script_bytes)
                 except Exception:
                     # Failed writing an executable - it might be in use.
                     logger.warning('Failed to write executable - trying to '
                                    'use .deleteme logic')
-                    dfname = '%s.deleteme' % outname
+                    dfname = f'{outname}.deleteme'
                     if os.path.exists(dfname):
                         os.remove(dfname)       # Not allowed to fail here
                     os.rename(outname, dfname)  # nor here
@@ -285,8 +281,8 @@ class ScriptMaker(object):
                     except Exception:
                         pass    # still in use - ignore error
             else:
-                if self._is_nt and not outname.endswith('.' + ext):  # pragma: no cover
-                    outname = '%s.%s' % (outname, ext)
+                if self._is_nt and not outname.endswith(f'.{ext}'):  # pragma: no cover
+                    outname = f'{outname}.{ext}'
                 if os.path.exists(outname) and not self.clobber:
                     logger.warning('Skipping existing file %s', outname)
                     continue
@@ -302,26 +298,23 @@ class ScriptMaker(object):
         if '' in self.variants:
             result.add(name)
         if 'X' in self.variants:
-            result.add('%s%s' % (name, self.version_info[0]))
+            result.add(f'{name}{self.version_info[0]}')
         if 'X.Y' in self.variants:
-            result.add('%s%s%s.%s' % (name, self.variant_separator,
-                                      self.version_info[0], self.version_info[1]))
+            result.add(
+                f'{name}{self.variant_separator}{self.version_info[0]}.{self.version_info[1]}'
+            )
         return result
 
     def _make_script(self, entry, filenames, options=None):
         post_interp = b''
         if options:
-            args = options.get('interpreter_args', [])
-            if args:
-                args = ' %s' % ' '.join(args)
+            if args := options.get('interpreter_args', []):
+                args = f" {' '.join(args)}"
                 post_interp = args.encode('utf-8')
         shebang = self._get_shebang('utf-8', post_interp, options=options)
         script = self._get_script_text(entry).encode('utf-8')
         scriptnames = self.get_script_filenames(entry.name)
-        if options and options.get('gui', False):
-            ext = 'pyw'
-        else:
-            ext = 'py'
+        ext = 'pyw' if options and options.get('gui', False) else 'py'
         self._write_script(scriptnames, shebang, script, filenames, ext)
 
     def _copy_script(self, script, filenames):
@@ -347,8 +340,7 @@ class ScriptMaker(object):
                 logger.warning('%s is an empty file (skipping)', script)
                 return
 
-            match = FIRST_LINE_RE.match(first_line.replace(b'\r\n', b'\n'))
-            if match:
+            if match := FIRST_LINE_RE.match(first_line.replace(b'\r\n', b'\n')):
                 adjust = True
                 post_interp = match.group(1) or b''
 
@@ -366,10 +358,7 @@ class ScriptMaker(object):
                 encoding, lines = detect_encoding(f.readline)
                 f.seek(0)
                 shebang = self._get_shebang(encoding, post_interp)
-                if b'pythonw' in first_line:  # pragma: no cover
-                    ext = 'pyw'
-                else:
-                    ext = 'py'
+                ext = 'pyw' if b'pythonw' in first_line else 'py'
                 n = os.path.basename(outname)
                 self._write_script([n], shebang, f.read(), filenames, ext)
             if f:
@@ -388,19 +377,15 @@ class ScriptMaker(object):
         # Launchers are from https://bitbucket.org/vinay.sajip/simple_launcher/
 
         def _get_launcher(self, kind):
-            if struct.calcsize('P') == 8:   # 64-bit
-                bits = '64'
-            else:
-                bits = '32'
+            bits = '64' if struct.calcsize('P') == 8 else '32'
             platform_suffix = '-arm' if get_platform() == 'win-arm64' else ''
-            name = '%s%s%s.exe' % (kind, bits, platform_suffix)
+            name = f'{kind}{bits}{platform_suffix}.exe'
             # Issue 31: don't hardcode an absolute package name, but
             # determine it relative to the current package
             distlib_package = __name__.rsplit('.', 1)[0]
             resource = finder(distlib_package).find(name)
             if not resource:
-                msg = ('Unable to find resource %s in package %s' % (name,
-                       distlib_package))
+                msg = f'Unable to find resource {name} in package {distlib_package}'
                 raise ValueError(msg)
             return resource.bytes
 
